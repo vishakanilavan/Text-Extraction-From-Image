@@ -42,5 +42,6 @@ Image Analysing and visualising is becoming more demand.This project helps in ex
 ## Demo:
 Here's My demo video  of the project
 in linkedin's profile
+
 https://www.linkedin.com/posts/vishaka-nilavan-9345aa138_data-datascientist-datasciencejobs-activity-7040315010467721216-0bf5/?utm_source=share&utm_medium=member_desktop
 
