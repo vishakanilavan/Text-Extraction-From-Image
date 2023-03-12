@@ -1,0 +1,8 @@
+easyocr==1.6.2
+numpy==1.21.5
+opencv_python_headless==4.5.4.60
+pandas==1.4.4
+Pillow==9.4.0
+PyMySQL==1.0.2
+SQLAlchemy==1.4.39
+streamlit==1.19.0
