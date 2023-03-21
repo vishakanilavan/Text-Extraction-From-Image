@@ -10,16 +10,22 @@ import pandas as pd
 import numpy as np
 import re
 import streamlit as st
+import io
+import cv2
+from PIL import Image
 
 # importing sql library
+import mysql.connector
 import pymysql
 from sqlalchemy import create_engine, text
+import sqlite3 
+import base64
 # Include PIL
 from PIL import Image
 import cv2
                                                     #Function To Extract Text & Forming DataFrame
 #-------------------------------------------------------------------------------------------------------------------------------------#
-
+@st.cache_data
 def text_extract(result_para,result_text):          
     PH=''
     ADD=''
@@ -74,7 +80,7 @@ def text_extract(result_para,result_text):
         digit_pattern = r'\d{6,7}'
         # Check if the string contains any of the keywords or a sequence of six or seven digits(i.e pincode)
         if any(keyword in string.lower() for keyword in keywords) or re.search(digit_pattern, string):
-            string=re.sub(r' *www\S* *| *WWW\S* *| *\S*.com *| *(?:[+-]?\d+\-?\S*){7,} *','',string)
+            string=re.sub(r' *www\S* *| *WWW\S* *| *\S*.com *| *(?:[+-]?\d+\-?\S*){6,} *','',string)
             if ad_count!= 0:
                 ADD=ADD+string+' '
                 ID.append(i)
@@ -111,86 +117,139 @@ def text_extract(result_para,result_text):
     #creating empty dataframe
     df=pd.DataFrame()
     # Assigning columns of dataframe
-    df['NAME']=NAME_lt
-    df['WORK']=WORK_lt
+    df['Name']=NAME_lt
+    df['Work']=WORK_lt
     df['Address']=ADD_lt
     df['Phone_No']=PH_lt
     df['Pincode']=PIN_lt
     df['E-Mail']=EMAIL_lt
-    df['Web']=WEB_lt
-    df['BIZ_DETAILS']=CARD_HOLDER_lt
+    df['Website']=WEB_lt
+    df['Details']=CARD_HOLDER_lt
     
     return df
                                                 #Text_extract.py
 #   -----------------------------------------------------------------------------------------------------------------------------------     
     
 st.title(":orange[Text Extractor From Image:ticket:]") 
-tab1,tab2,tab3=st.tabs(['Home','Database Upload','Uploaded'])
+tab1,tab2,tab3,tab4=st.tabs(['Home','Upload','Update','Delete'])
 with tab1:
     image_file = st.file_uploader(":orange[Upload Images👇]", type=["png","jpg","jpeg"])
     reader=ocr.Reader(['en'])
 
     # If user attempts to upload a file.
     if image_file is not None:
-        bytes_data = image_file.getvalue() # To convert stringio file format to bytes format
-        # Show the image filename and image.
-        #st.write(f'filename: {image_file.name}')
-        with st.sidebar:
-            st.title(':orange[Image Tab]🎭')
-            st.image(bytes_data)      
-        results_para=reader.readtext(bytes_data, detail=0,paragraph=True)
-        results_text= reader.readtext(bytes_data,detail=0,paragraph=False)
-        #results=reader.readtext(np.array(input_image), detail=0,paragraph=True)
+        # To read file as bytes:
+        bytes_data = image_file.getvalue() # To read file as bytes
+        bytes_array=np.array(bytes_data) # Converting bytes to bytes array
+        #Encode the byte array as Base64 
+        image_base64 = base64.b64encode(bytes_data)
+        st.header(':orange[Image]🎭')
+        st.image(image_file) # image object accepts only bytes or numpy array datatype 
+        # Read the text from the image using OCR
+        image = Image.open(io.BytesIO(image_file.read()))
+        
+
+        # Convert PIL Image object to numpy array
+        img_array = np.array(image)
+
+        # Pass numpy array to EasyOCR's readtext() method
+        results_para=reader.readtext(img_array, detail=0,paragraph=True) #Image should be in byte/Numpy array/str format
+        results_text= reader.readtext(img_array,detail=0,paragraph=False)
         df=text_extract(results_para,results_text)
         # Display the dataframe and allow the user to stretch the dataframe
         if st.button('EXTRACT TEXT'):
             st.markdown(df.style.hide(axis="index").to_html(), unsafe_allow_html=True)
 
     else:
-        st.info('📍Please :green[upload the Image]')
-    
-with tab2:    
-    # To connect MySQL database
-    conn = pymysql.connect(
-        host='localhost',
-        user='root',
-        password = "1234",
-        database='Text2'
-        )
-    cur = conn.cursor()
-    #creating new database
-    #cur.execute('CREATE DATABASE Text2') #For starting up only 
-    #importing sql library
-    from sqlalchemy import create_engine
-    table_name=st.text_input(":orange[Enter Image Name for saving in database Table]👇","For Example: ram  (name of the person)")
-    # create a reference for sql library
-    engine = create_engine('mysql+pymysql://root:1234@localhost:3306/Text2',echo = False)
-    # Attach the data frame to the sql with a name of the table
-    if st.button("Upload"):
-        if len(table_name)!=0:
-            try:
-                df.to_sql (table_name,con = engine,if_exists='fail')
-                st.success(f':green[{table_name} File is uploaded!]', icon="✅")
-            except:
-                st.warning('Image Name :red[Already Exists]', icon="⚠️")
+        st.info('📍Please :green[upload the Image]')  
         
-        else:
-            st.warning(':red[Give Image Name] to upload', icon="⚠️")
+                                                # Upload to DB
+# ---------------------------------------------------------------------------------------------------------------------------------------
 
+# To connect MySQL database
+con =mysql.connector.connect(
+host='localhost',
+user='root',
+password = "1234",
+auth_plugin='mysql_native_password'
+)
+mycursor = con.cursor()
+#creating new database
+mycursor.execute('CREATE DATABASE IF NOT EXISTS ocr') #For starting up only
+con.commit()
+                  #--------------------------------------------------------------------------#
+# create a reference for sqlalchemy object
+engine = create_engine('mysql+pymysql://root:1234@localhost:3306/ocr',echo = False)                         
+conn =pymysql.connect(
+host='localhost',
+user='root',
+password = "1234",
+database='ocr',
+#auth_plugin='mysql_native_password'
+)
+mycursor=conn.cursor()
+#mycursor.execute("DROP TABLE IF EXISTS business_cards")
+mycursor.execute("CREATE TABLE IF NOT EXISTS Business_cards (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), work                                       VARCHAR(255), address VARCHAR(255), phone VARCHAR(255), pincode VARCHAR(255), email VARCHAR(255),website                                   VARCHAR(255), details VARCHAR(255),image LONGBLOB)"
+                  )
+
+with tab2:        
+    st.subheader("Upload Into Database ")
+    query = 'SELECT * FROM business_cards' 
+    # As Normal assign gives OPTIONAL ENGINE (Attribute Error)    
+    new_df= pd.read_sql_query(sql=text(query), con=engine.connect())
+    st.dataframe(new_df)
+    
+    if st.button("Upload"):
+        sql = "INSERT INTO business_cards(name, work, address, phone, pincode, email, website, details, image) VALUES(%s, %s, %s,                                                     %s,%s,%s, %s, %s, %s)"
+        val = (df['Name'][0],df['Work'][0],df['Address'][0], df['Phone_No'][0],df['Pincode'][0],df['E-Mail'][0], df['Website'][0],                        df['Details'][0],image_base64)
+        mycursor.execute(sql, val)
+        conn.commit()
+        st.sidebar.success("Data uploaded successfully!")
+        query = 'SELECT * FROM business_cards'     
+        df_1= pd.read_sql_query(sql=text(query), con=engine.connect())
+        st.table(df_1)
+        
+                                                         # Update DB
+ #-----------------------------------------------------------------------------------------------------------------------------------------
 with tab3:
-    cur.execute("Show tables;")
-    myresult = cur.fetchall()
-    table_names=[]
-    for x in myresult:
-        table_names.append(x[0])
-    option = st.selectbox(':orange[Select Uploaded Photo File]',np.array(table_names))
+    new_df=pd.read_sql(text("SELECT * FROM business_cards"),engine.connect())
+    st.table(new_df)
+    st.subheader("Update Records:")
+    option=st.selectbox('Select Option to Update',new_df.columns[0:-1])
     if option:
-        st.write(f'You selected: :green[{option}]📂')
-        query = f'SELECT * FROM {option}' 
-         # As Normal assign gives OPTIONAL ENGINE (Attribute Error)    
-        df_upload= pd.read_sql_query(sql=text(query), con=engine.connect())
-        df_upload.drop(['index'],axis=1,inplace=True)
-        st.markdown(df_upload.style.hide(axis="index").to_html(), unsafe_allow_html=True)
-    
-#---------------------------------------------------------------------------------------------------------------------------------------#   
-    
+        with st.form("Update-form"):
+            id1=st.text_input('Enter the id to update')
+            new=st.text_input(f'Enter The New {option}')
+            if st.form_submit_button('UPDATE'):
+                try:
+                    sql = f'UPDATE business_cards SET {option}=%s WHERE id = %s'
+                    val = (new, id1)
+                    mycursor.execute(sql, val)
+                    conn.commit()
+                    st.success("Record updated successfully")
+                except:
+                    st.warning("Enter correct Details to Update")
+                df = pd.read_sql(text("SELECT * FROM business_cards"),engine.connect())
+                st.dataframe(df)
+            
+                                                     # Delete Records
+#------------------------------------------------------------------------------------------------------------------------------------------
+with tab4:
+    new_df=pd.read_sql(text("SELECT * FROM business_cards"),engine.connect())
+    st.table(new_df)
+    st.subheader("Delete Data")
+    with st.form("delete-form"):
+        id = st.text_input("Enter the record id you want to delete")
+        submitted = st.form_submit_button("Delete")
+        if submitted:
+            try:
+                sql = "DELETE FROM business_cards WHERE id = %s"
+                val = (id,)
+                mycursor.execute(sql, val)
+                conn.commit()
+                st.warning("Record deleted successfully")
+            except:
+                st.warning("Enter correct Details")
+            df = pd.read_sql(text("SELECT * FROM business_cards"),engine.connect())
+            st.dataframe(df)
+
